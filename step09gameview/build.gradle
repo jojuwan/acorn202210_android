@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'com.example.step09customview'
+    namespace 'com.example.step09gameview'
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.example.step09customview"
+        applicationId "com.example.step09gameview"
         minSdk 21
         targetSdk 32
         versionCode 1
