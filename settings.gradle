@@ -13,6 +13,7 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "MyAndroid"
+/*
 include ':step01activity'
 include ':step01activity2'
 include ':step02layout'
@@ -41,4 +42,6 @@ include ':step17httprequest3'
 include ':step17example'
 include ':step18login'
 include ':step19callphone'
+ */
 include ':step20contentprovider'
+include ':step21notification'
