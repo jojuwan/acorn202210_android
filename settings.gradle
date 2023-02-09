@@ -45,3 +45,4 @@ include ':step19callphone'
  */
 include ':step20contentprovider'
 include ':step21notification'
+include ':step22service'
