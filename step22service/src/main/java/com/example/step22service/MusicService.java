@@ -28,6 +28,7 @@ public class MusicService extends Service {
         Log.e("MusicService", "onCreate()");
         //음악 로딩하기
         mp=MediaPlayer.create(this, R.raw.mp3piano);
+
     }
     //서비스가 시작 될때 호출되는 메소드
     @Override
@@ -80,3 +81,5 @@ public class MusicService extends Service {
         }
     }
 }
+
+

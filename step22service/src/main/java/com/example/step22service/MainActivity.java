@@ -101,10 +101,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 stopService(intent2);
                 break;
             case R.id.pauseBtn:
-
+                //필드에 저장되어 있는 MusicService 객체의 참조값을 이용해서 메소드 호출
+                service.pauseMusic();
                 break;
             case R.id.playBtn:
-
+                //필드에 저장되어 있는 MusicService 객체의 참조값을 이용해서 메소드 호출
+                service.playMusic();
                 break;
             case R.id.endBtn:
                 finish(); //액티비티 종료
