@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 /*
     MusicService 를 이용해서 음악을 재생하는 방법
+
     - initMusic() 메소드를 호출하면서 음원의 위치를 넣어주고
     - 음원 로딩이 완료되면 자동으로 play 된다.
  */
@@ -206,3 +207,9 @@ public class MusicService extends Service implements MediaPlayer.OnPreparedListe
         NotificationManagerCompat.from(this).notify(AppConstants.NOTI_ID, noti);
     }
 }
+
+
+
+
+
+

@@ -6,14 +6,26 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
+import android.preference.PreferenceManager;
+import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
+import android.widget.ImageView;
+import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -22,9 +34,19 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity  {
+public class MainActivity extends AppCompatActivity  implements AdapterView.OnItemClickListener {
 
     MediaPlayer mp;
     //재생 준비가 되었는지 여부
@@ -38,6 +60,18 @@ public class MainActivity extends AppCompatActivity  {
     MusicService service;
     //서비스에 연결되었는지 여부
     boolean isConnected;
+    //Adapter 에 연결된 모델
+    List<String> songs;
+    //Adapter 의 참조값
+    ArrayAdapter<String> adapter;
+
+    SharedPreferences pref;
+    String sessionId;
+    String id;
+
+    //재생음악 목록
+    List<MusicDto> musicList=new ArrayList<>();
+
     //서비스 연결객체
     ServiceConnection sConn=new ServiceConnection() {
         //서비스에 연결이 되었을때 호출되는 메소드
@@ -112,8 +146,8 @@ public class MainActivity extends AppCompatActivity  {
         playBtn=findViewById(R.id.playBtn);
         //재생버튼을 눌렀을때
         playBtn.setOnClickListener(v->{
-            //서비스의 initMusic() 메소드를 호출해서 음악이 재생 되도록 한다.
-            service.initMusic("http://192.168.0.31:9000/boot07/resources/upload/mp3piano.mp3");
+            //서비스의 playMusic() 메소드를 호출해서 음악이 재생 되도록 한다.
+            service.playMusic();
         });
         //일시 중지 버튼
         ImageButton pauseBtn=findViewById(R.id.pauseBtn);
@@ -124,6 +158,15 @@ public class MainActivity extends AppCompatActivity  {
         //알림체널만들기
         createNotificationChannel();
 
+        //ListView 관련 작업
+        ListView listView=findViewById(R.id.listView);
+        //셈플 데이터
+        songs=new ArrayList<>();
+        //ListView 에 연결할 아답타
+        adapter=new ArrayAdapter<>(this, android.R.layout.simple_list_item_activated_1, songs);
+        listView.setAdapter(adapter);
+        //ListView 에 아이템 클릭 리스너 등록
+        listView.setOnItemClickListener(this);
     }
 
     @Override
@@ -137,6 +180,11 @@ public class MainActivity extends AppCompatActivity  {
         // 만일 서비스가 시작이 되지 않았으면 서비스 객체를 생성해서
         // 시작할 준비만 된 서비스에 바인딩이 된다.
         bindService(intent, sConn, Context.BIND_AUTO_CREATE);
+
+        pref= PreferenceManager.getDefaultSharedPreferences(this);
+        sessionId=pref.getString("sessionId", "");
+        //로그인 했는지 체크하기
+        new LoginCheckTask().execute(AppConstants.BASE_URL+"/music/logincheck");
     }
 
     @Override
@@ -188,5 +236,266 @@ public class MainActivity extends AppCompatActivity  {
                 break;
         }
     }
+    //ListView 의 cell 을 클릭하면 호출되는 메소드
+    @Override
+    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        // position 은 클릭한 셀의 인덱스
+        String fileName=musicList.get(position).getSaveFileName();
+        service.initMusic(AppConstants.MUSIC_URL+fileName);
+
+        //mp3 파일의 title 이미지를 얻어내는 작업
+        MediaMetadataRetriever mmr=new MediaMetadataRetriever();
+        //mp3 파일 로딩
+        mmr.setDataSource(AppConstants.MUSIC_URL+fileName);
+        //이미지 data 를 byte[] 로 얻어내서
+        byte[] imageData=mmr.getEmbeddedPicture();
+        //만일 이미지 데이터가 있다면
+        if(imageData != null) {
+            // byte[] 을 활용해서 Bitmap 이미지를 얻어내고
+            Bitmap image = BitmapFactory.decodeByteArray(imageData, 0, imageData.length);
+            // Bitmap 이미지를 출력할 ImageView
+            ImageView imageView = findViewById(R.id.imageView);
+            imageView.setImageBitmap(image);
+        }else{
+            //기본 이미지를 출력한다든지 작업을 하면 된다.
+
+        }
+    }
+
+    //로그인 여부를 체크하는 작업을 할 비동기 task
+    class LoginCheckTask extends AsyncTask<String, Void, Boolean> {
+
+        @Override
+        protected Boolean doInBackground(String... strings) {
+            //로그인 체크 url
+            String requestUrl=strings[0];
+            //서버가 http 요청에 대해서 응답하는 문자열을 누적할 객체
+            StringBuilder builder=new StringBuilder();
+            HttpURLConnection conn=null;
+            InputStreamReader isr=null;
+            BufferedReader br=null;
+            boolean isLogin=false;
+            try{
+                //URL 객체 생성
+                URL url=new URL(requestUrl);
+                //HttpURLConnection 객체의 참조값 얻어오기
+                conn=(HttpURLConnection)url.openConnection();
+                if(conn!=null){//연결이 되었다면
+                    conn.setConnectTimeout(20000); //응답을 기다리는 최대 대기 시간
+                    conn.setRequestMethod("GET");//Default 설정
+                    conn.setUseCaches(false);//케쉬 사용 여부
+                    //App 에 저장된 session id 가 있다면 요청할때 쿠키로 같이 보내기
+                    if(!sessionId.equals("")) {
+                        // JSESSIONID=xxx 형식의 문자열을 쿠키로 보내기
+                        conn.setRequestProperty("Cookie", sessionId);
+                    }
+
+                    //응답 코드를 읽어온다.
+                    int responseCode=conn.getResponseCode();
+
+                    if(responseCode==200){//정상 응답이라면...
+                        //서버가 출력하는 문자열을 읽어오기 위한 객체
+                        isr=new InputStreamReader(conn.getInputStream());
+                        br=new BufferedReader(isr);
+                        //반복문 돌면서 읽어오기
+                        while(true){
+                            //한줄씩 읽어들인다.
+                            String line=br.readLine();
+                            //더이상 읽어올 문자열이 없으면 반복문 탈출
+                            if(line==null)break;
+                            //읽어온 문자열 누적 시키기
+                            builder.append(line);
+                        }
+                    }
+                }
+                //서버가 응답한 쿠키 목록을 읽어온다.
+                List<String> cookList=conn.getHeaderFields().get("Set-Cookie");
+                //만일 쿠키가 존대 한다면
+                if(cookList != null){
+                    //반복문 돌면서
+                    for(String tmp : cookList){
+                        //session id 가 들어 있는 쿠키를 찾아내서
+                        if(tmp.contains("JSESSIONID")){
+                            //session id 만 추출해서
+                            String sessionId=tmp.split(";")[0];
+                            //SharedPreferences 을 편집할수 있는 객체를 활용해서
+                            SharedPreferences.Editor editor=pref.edit();
+                            //sessionId 라는 키값으로 session id 값을 저장한다.
+                            editor.putString("sessionId", sessionId);
+                            editor.apply();//apply() 는 비동기로 저장하기 때문에 실행의 흐름이 잡혀 있지 않다(지연이 없음)
+                            //필드에도 담아둔다.
+                            MainActivity.this.sessionId=sessionId;
+                        }
+                    }
+                }
+                //출력받은 문자열 전체 얻어내기
+                JSONObject obj=new JSONObject(builder.toString());
+                /*
+                    {"isLogin":false} or {"isLogin":true, "id":"kimgura"}
+                    서버에서 위와 같은 형식의 json 문자열을 응답할 예정이다.
+                 */
+                Log.d("서버가 응답한 문자열", builder.toString());
+                //로그인 여부를 읽어와서
+                isLogin=obj.getBoolean("isLogin");
+                //만일 로그인을 했다면
+                if(isLogin){
+                    //필드에 로그인된 아이디를 담아둔다.
+                    id=obj.getString("id");
+                }
+            }catch(Exception e){//예외가 발생하면
+                Log.e("LoginCheckTask", e.getMessage());
+            }finally {
+                try{
+                    if(isr!=null)isr.close();
+                    if(br!=null)br.close();
+                    if(conn!=null)conn.disconnect();
+                }catch(Exception e){}
+            }
+            //로그인 여부를 리턴하면 아래의 onPostExecute() 메소드에 전달된다.
+            return isLogin;
+        }
+
+        @Override
+        protected void onPostExecute(Boolean isLogin) {
+            super.onPostExecute(isLogin);
+            //여기는 UI 스레드 이기 때문에 UI 와 관련된 작업을 할수 있다.
+            //TextView 에 로그인 여부를 출력하기
+            if(isLogin){
+                TextView infoText=findViewById(R.id.infoText);
+                infoText.setText(id+" 님 로그인중...");
+                //재생목록 받아오기
+                new MusicListTask().execute(AppConstants.BASE_URL+"/api/music/list");
+            }else{
+                //로그인 액티비티로 이동
+                Intent intent=new Intent(MainActivity.this, LoginActivity.class);
+                startActivity(intent);
+            }
+        }
+    }
+
+    //재생목록을 얻어올 작업을 할 비동기 task
+    class MusicListTask extends AsyncTask<String, Void, String> {
+
+        @Override
+        protected String doInBackground(String... strings) {
+            //요청 url
+            String requestUrl=strings[0];
+            //서버가 http 요청에 대해서 응답하는 문자열을 누적할 객체
+            StringBuilder builder=new StringBuilder();
+            HttpURLConnection conn=null;
+            InputStreamReader isr=null;
+            BufferedReader br=null;
+            try{
+                //URL 객체 생성
+                URL url=new URL(requestUrl);
+                //HttpURLConnection 객체의 참조값 얻어오기
+                conn=(HttpURLConnection)url.openConnection();
+                if(conn!=null){//연결이 되었다면
+                    conn.setConnectTimeout(20000); //응답을 기다리는 최대 대기 시간
+                    conn.setRequestMethod("GET");//Default 설정
+                    conn.setUseCaches(false);//케쉬 사용 여부
+                    //App 에 저장된 session id 가 있다면 요청할때 쿠키로 같이 보내기
+                    if(!sessionId.equals("")) {
+                        // JSESSIONID=xxx 형식의 문자열을 쿠키로 보내기
+                        conn.setRequestProperty("Cookie", sessionId);
+                    }
+
+                    //응답 코드를 읽어온다.
+                    int responseCode=conn.getResponseCode();
+
+                    if(responseCode==200){//정상 응답이라면...
+                        //서버가 출력하는 문자열을 읽어오기 위한 객체
+                        isr=new InputStreamReader(conn.getInputStream());
+                        br=new BufferedReader(isr);
+                        //반복문 돌면서 읽어오기
+                        while(true){
+                            //한줄씩 읽어들인다.
+                            String line=br.readLine();
+                            //더이상 읽어올 문자열이 없으면 반복문 탈출
+                            if(line==null)break;
+                            //읽어온 문자열 누적 시키기
+                            builder.append(line);
+                        }
+                    }
+                }
+                //서버가 응답한 쿠키 목록을 읽어온다.
+                List<String> cookList=conn.getHeaderFields().get("Set-Cookie");
+                //만일 쿠키가 존대 한다면
+                if(cookList != null){
+                    //반복문 돌면서
+                    for(String tmp : cookList){
+                        //session id 가 들어 있는 쿠키를 찾아내서
+                        if(tmp.contains("JSESSIONID")){
+                            //session id 만 추출해서
+                            String sessionId=tmp.split(";")[0];
+                            //SharedPreferences 을 편집할수 있는 객체를 활용해서
+                            SharedPreferences.Editor editor=pref.edit();
+                            //sessionId 라는 키값으로 session id 값을 저장한다.
+                            editor.putString("sessionId", sessionId);
+                            editor.apply();//apply() 는 비동기로 저장하기 때문에 실행의 흐름이 잡혀 있지 않다(지연이 없음)
+                            //필드에도 담아둔다.
+                            MainActivity.this.sessionId=sessionId;
+                        }
+                    }
+                }
+
+            }catch(Exception e){//예외가 발생하면
+                Log.e("MusicListTask", e.getMessage());
+            }finally {
+                try{
+                    if(isr!=null)isr.close();
+                    if(br!=null)br.close();
+                    if(conn!=null)conn.disconnect();
+                }catch(Exception e){}
+            }
+            //응답받은 문자열을 리턴한다.
+            return builder.toString();
+        }
+
+        @Override
+        protected void onPostExecute(String jsonStr) {
+            super.onPostExecute(jsonStr);
+            //여기는 UI 스레드
+            // jsonStr 은 [{},{},...]  형식의 문자열이기 때문에 JSONArray 객체를 생성한다.
+            songs.clear();
+            musicList.clear();
+            try {
+                JSONArray arr = new JSONArray(jsonStr);
+                for(int i=0; i<arr.length(); i++){
+                    // i 번째 JSONObject 객체를 참조
+                    JSONObject tmp=arr.getJSONObject(i);
+                    int num=tmp.getInt("num");
+                    String writer=tmp.getString("writer");
+                    // "title" 이라는 키값으로 저장된 문자열 읽어오기
+                    String title=tmp.getString("title");
+                    String artist=tmp.getString("artist");
+                    String orgFileName=tmp.getString("orgFileName");
+                    String saveFileName=tmp.getString("saveFileName");
+                    String regdate=tmp.getString("regdate");
+                    //ListView 에 연결된 모델에 곡의 제목을 담는다
+                    songs.add(title);
+                    //음악하나의 자세한 정보를 MusicDto 에 담고
+                    MusicDto dto=new MusicDto();
+                    dto.setNum(num);
+                    dto.setWriter(writer);
+                    dto.setTitle(title);
+                    dto.setArtist(artist);
+                    dto.setOrgFileName(orgFileName);
+                    dto.setSaveFileName(saveFileName);
+                    dto.setRegdate(regdate);
+                    //MusicDto 를 List 에 누적 시킨다.
+                    musicList.add(dto);
+                }
+                adapter.notifyDataSetChanged();
+            }catch (JSONException je){
+                Log.e("onPoseExecute()", je.getMessage());
+            }
+        }
+    }
 }
+
+
+
+
+
 
