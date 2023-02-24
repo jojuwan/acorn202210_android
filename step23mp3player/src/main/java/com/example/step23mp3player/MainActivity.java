@@ -46,7 +46,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity  implements AdapterView.OnItemClickListener {
+public class MainActivity extends AppCompatActivity  implements AdapterView.OnItemClickListener,
+        MusicService.OnMoveToListener{
 
     MediaPlayer mp;
     //재생 준비가 되었는지 여부
@@ -71,6 +72,8 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
 
     //재생음악 목록
     List<MusicDto> musicList=new ArrayList<>();
+    //ListView 의 참조값을 저장할 필드
+    ListView listView;
 
     //서비스 연결객체
     ServiceConnection sConn=new ServiceConnection() {
@@ -83,6 +86,9 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
             service=lBinder.getService();
             //연결되었다고 표시
             isConnected=true;
+            service.setMusicList(musicList);
+            //재생 위치가 다음곡으로 이동했을때 해당 이벤트를 감시할 리스너 등록
+            service.setOnMoveToListener(MainActivity.this);
             //핸들러에 메세지 보내기
             handler.removeMessages(0); //만일 핸들러가 동작중에 있으면 메세지를 제거하고
             handler.sendEmptyMessageDelayed(0, 100); //다시 보내기
@@ -159,7 +165,7 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
         createNotificationChannel();
 
         //ListView 관련 작업
-        ListView listView=findViewById(R.id.listView);
+        listView=findViewById(R.id.listView);
         //셈플 데이터
         songs=new ArrayList<>();
         //ListView 에 연결할 아답타
@@ -174,12 +180,10 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
         super.onStart();
         // MusicService 에 연결할 인텐트 객체
         Intent intent=new Intent(this, MusicService.class);
+        intent.setAction("Dummy Action");
         //서비스 시작 시키기
-        //startService(intent);
-        // 액티비티의 bindService() 메소드를 이용해서 연결한다.
-        // 만일 서비스가 시작이 되지 않았으면 서비스 객체를 생성해서
-        // 시작할 준비만 된 서비스에 바인딩이 된다.
-        bindService(intent, sConn, Context.BIND_AUTO_CREATE);
+        //이미 서비스가 동작 중이라면 onStartCommand() 메소드만 다시 호출된다.
+        startService(intent);
 
         pref= PreferenceManager.getDefaultSharedPreferences(this);
         sessionId=pref.getString("sessionId", "");
@@ -240,11 +244,12 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
         // position 은 클릭한 셀의 인덱스
-        String fileName=musicList.get(position).getSaveFileName();
-        service.initMusic(AppConstants.MUSIC_URL+fileName);
+
+        service.initMusic(position);
 
         //mp3 파일의 title 이미지를 얻어내는 작업
         MediaMetadataRetriever mmr=new MediaMetadataRetriever();
+        String fileName=musicList.get(position).getSaveFileName();
         //mp3 파일 로딩
         mmr.setDataSource(AppConstants.MUSIC_URL+fileName);
         //이미지 data 를 byte[] 로 얻어내서
@@ -260,6 +265,13 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
             //기본 이미지를 출력한다든지 작업을 하면 된다.
 
         }
+    }
+    //MusicService 클래스 안에 정의된 OnMoveToListener 인터페이스를 구현해서 강제 오버라이드한 메소드
+    @Override
+    public void moved(int index) {
+        //재생위치가 다음으로 이동했을때 호출되는 메소드로 만들 예정
+        //ListView 의 selection 을 index 로 이동 시킨다
+        listView.setSelection(index);
     }
 
     //로그인 여부를 체크하는 작업을 할 비동기 task
@@ -365,6 +377,10 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
                 infoText.setText(id+" 님 로그인중...");
                 //재생목록 받아오기
                 new MusicListTask().execute(AppConstants.BASE_URL+"/api/music/list");
+                // 액티비티의 bindService() 메소드를 이용해서 연결한다.
+                Intent intent=new Intent(MainActivity.this, MusicService.class);
+                intent.setAction("Dummy Action");
+                bindService(intent, sConn, Context.BIND_AUTO_CREATE);
             }else{
                 //로그인 액티비티로 이동
                 Intent intent=new Intent(MainActivity.this, LoginActivity.class);
@@ -493,9 +509,3 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
         }
     }
 }
-
-
-
-
-
-
