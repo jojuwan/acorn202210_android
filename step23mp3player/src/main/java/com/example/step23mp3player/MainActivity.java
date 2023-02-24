@@ -160,6 +160,16 @@ public class MainActivity extends AppCompatActivity  implements AdapterView.OnIt
         pauseBtn.setOnClickListener(v->{
             service.pauseMusic();
         });
+        //뒤로 감기 버튼
+        ImageButton rewBtn=findViewById(R.id.rewBtn);
+        rewBtn.setOnClickListener(v->{
+            service.rewMusic();
+        });
+        //앞으로 감기 버튼
+        ImageButton ffBtn=findViewById(R.id.ffBtn);
+        ffBtn.setOnClickListener(v->{
+            service.ffMusic();
+        });
 
         //알림체널만들기
         createNotificationChannel();
