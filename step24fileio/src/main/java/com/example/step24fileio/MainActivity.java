@@ -151,6 +151,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //텍스트 파일을 만들기 위한 파일 객체 생성
         File file=new File(absolutePath+"/memo.txt");
         try{
+            //만일 2진 데이터라면
+            //FileOutputStream fos=new FileOutputStream(file);
             FileWriter fw=new FileWriter(file, true);
             fw.append(msg+"\n");
             fw.flush();
